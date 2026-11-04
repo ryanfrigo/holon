@@ -1,0 +1,4 @@
+#!/bin/sh
+# Test shell: no readline. Readline redraws a long typed line as echo arrives, and under load
+# the redraws interleave and leave the screen mangled; tty echo alone keeps the text contiguous.
+exec /bin/bash --noediting --posix "$@"

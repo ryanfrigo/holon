@@ -1,0 +1,9 @@
+# Left out of the public export (scripts/release.ts): the owner's own org logs, inbox, and the specs and analyses its org writes about itself (they name private projects and home paths).
+HOLON-LOG.md export-ignore
+COST-ADVICE.md export-ignore
+docs/inbox export-ignore
+.claude export-ignore
+docs/specs export-ignore
+docs/analysis export-ignore
+docs/evidence export-ignore
+docs/launch export-ignore

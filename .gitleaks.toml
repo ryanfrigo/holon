@@ -1,0 +1,8 @@
+# gitleaks flags three obvious fakes in the redaction tests (whsec_123456, a one-line RSA header,
+# abcdef1234567890xyz) and a FAKE-TOKEN bearer header in heal-stuck-prompt: test inputs. Only those files are exempt.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "fake secrets that the redaction tests feed to redact()"
+paths = ['''packages/core/test/watcher\.test\.ts''', '''packages/core/test/heal-stuck-prompt\.test\.ts''']

@@ -1,0 +1,32 @@
+{
+  "name": "holon",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "daemon": "node packages/core/src/daemon.ts",
+    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true",
+    "typecheck": "tsc -p .",
+    "e2e": "node scripts/e2e-drive.ts",
+    "app": "npm run app -w @holon/desktop",
+    "dev": "npm run dev -w @holon/desktop"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "license": "MIT",
+  "overrides": {
+    "app-builder-lib": {
+      "@electron/get": "5.1.0"
+    }
+  }
+}
