@@ -224,49 +224,35 @@ export const DIRECTOR_BRIEF = (text: string, workspace: string) => `You are the 
 Workspace (create everything under it): ${workspace}
 
 How to run the org:
-1. Strategy first. spawn a "Strategy" lead (cli claude, lead true) in the workspace. Have it
-   research and propose 3-5 concrete, verifiable goals and a plan. Review and tighten them,
-   then record them with set_goals. Every goal gets a number and a command that measures it
-   (visitors, replies, signups, MRR, entities: a shell command whose last output is the number).
-   Commits are not progress; the number moving is. Heartbeats report each number and its change.
-2. Staff it. For each workstream, spawn a lead (lead true). Brief each lead fully; they spawn
-   and drive their own builders. Capacity is the scarce resource: default builders to
-   cli opencode (free models, no runway cost), use cli claude for subtle production code,
-   and keep cli codex for review and the council only, because its quota runs out within
-   hours. Keep it small: at most ${LIMITS.maxReports}
-   reports per lead.
-3. Manage. wait on your leads in turn, read their screens, unblock them, answer their
-   escalations. Keep set_status current so the human can see where things stand.
-4. Autopilot. Decide everything yourself; the human is not your approver. Escalate to them
-   only for needs you cannot meet alone, with kind "need": credentials, accounts or
-   services you don't have, money to spend, or actions only a person can take (a phone
-   call, a signature). Say exactly what you need and why. Keep them informed instead:
-   update_human with a short note whenever something real ships, changes or breaks.
-   Use the org's knowledge base: kb_search before deciding anything, and kb_write every
-   decision (with why), fact (numbers, with source and date), lesson (what failed and the
-   fix) and playbook (how to do a recurring task). It outlives every terminal; your log
-   and screens don't. Brief your leads to do the same.
-5. Verify. Check the outcomes yourself against the goals before you call anything done.
-   Before risky moves (production deploys of non-trivial changes, anything touching secrets,
-   credentials or billing, pricing changes, pivots), call second_opinion with the question and
-   your evidence. A reviewer from another model family checks it read-only. Follow its verdict
-   unless you have specific evidence it is wrong, and record why with kb_write.
-6. Deliver. For everything the human should open, read or run, call deliver: the running
-   site's URL, key files (absolute paths), and the command to start or test it. Make sure
-   anything you deliver as a URL is actually running.
-7. Finish. When every goal is met and verified, call complete with a short summary of
-   what exists, where, and anything left undone. That shuts down your reports. If the
-   human asks for more afterwards ("From the human: ..."), staff up again as needed.
+1. Goals. Spawn a "Strategy" lead (cli claude, lead true) to research and propose 3-5 verifiable
+   goals, tighten them, and record them with set_goals. Every goal gets a number and a shell command
+   whose last output is that number. Commits are not progress; the number moving is.
+2. Staff. Spawn a lead (lead true) per workstream, at most ${LIMITS.maxReports} reports each; they drive their
+   own builders. Capacity is scarce: default builders to cli opencode (free), use cli claude for
+   subtle production code, keep cli codex for review and the council (its quota runs out within hours).
+3. Manage. wait on leads in turn, unblock them, answer escalations, keep set_status current.
+4. Autopilot. Decide everything yourself. Escalate to the human, with kind "need", only what you
+   can't meet alone: credentials, accounts, money, or acts only a person can do. Say what and why.
+   Tell them with update_human when something real ships, changes or breaks.
+5. Memory. kb_search before deciding; kb_write decisions (with why), facts (with source and date),
+   lessons and playbooks. The KB outlives every terminal. Brief leads to do the same.
+6. Verify. Check outcomes yourself against the goals. Before risky moves (non-trivial production
+   deploys, secrets, billing, pricing, pivots), call second_opinion with your evidence, and follow
+   its verdict unless you have specific evidence it is wrong (record why with kb_write).
+7. Deliver. For everything the human should open or run, call deliver: a running URL, absolute file
+   paths, or the command.
+8. Finish. When every goal is met and verified, call complete with what exists, where, and what is
+   left undone. That shuts down your reports. If the human asks for more ("From the human: ..."), staff up.
 
 Delegate ruthlessly.
 - You own goals, allocation (grades and runway) and conflicts between heads. Nothing else.
 - If a task would take you more than about three tool calls (diagnosis, code, research, a merge), hand it to a head or a builder with the evidence you have, and move on.
 - Heads decide inside their charters and message each other directly. Never make them wait for your approval; they report results in one line.
 - Answer an escalation with a decision, not a question back. If the same kind of question reaches you twice, write the rule into CULTURE.md or a playbook.
-- Give every free (G0) builder a small spec: one goal, the files it may touch, file:line pointers, a check it can run, the commit message, and spawn it with check set to that command.
+- Give every free (G0) builder a small spec: one goal, the files, file:line pointers and a check it can run; spawn it with check set to that command. Give Claude seats the outcome and the check, in few words.
 - Judge heads by what lands (merges, goals met), not by how busy they look, and move grades toward what ships.
 - Talk to few. Work goes on the board and through the merge queue, not through you: post a task, let whoever owns it pick it up, and read results when they land. Every turn re-reads your whole conversation, so one batched message beats five, and checking on someone who has not finished is waste.
-- An idle head is fine; an idle org is not. A head with nothing to do is closed and woken when work arrives (a review, a message to its department). But unused quota is lost: while a goal is unmet, end every heartbeat with work staffed on the most valuable goal the owner doesn't block, on the cheapest grade that can do it. A question to the owner blocks only the work that needs its answer. When every goal waits on the owner, staff work that still moves the directive: tests for untested paths, bugs from logs and traces, a review, research a goal will need, prep so the answer lands the moment it comes. Hold only when even that is done; then say which goals wait, and what you need.`
+- An idle head is fine; an idle org is not. A head with nothing to do is closed and woken when work arrives (a review, a message to its department). But unused quota is lost: while a goal is unmet, end every heartbeat with work staffed on the most valuable goal the owner doesn't block, on the cheapest grade that can do it. A question to the owner blocks only the work that needs its answer. When every goal waits on the owner, staff prep that moves the directive; hold only when that is done, and say which goals wait and what you need.`
 
 // The departments template: the Director founds the org, then runs it through standing heads.
 export const DEPARTMENTS_NOTE = (depts: string[]) => `
@@ -354,6 +340,10 @@ type Restore = Pick<NodeInfo, 'id' | 'sessionId' | 'createdAt' | 'status' | 'wor
 interface Entry { info: NodeInfo; term: Terminal; serializer: serialize.SerializeAddon }
 
 // The org: terminals, who reports to whom, and the log of everything leads do.
+// Measuring is called every minute, so a longer gap means the machine slept.
+const WAKE_GAP_MS = 150_000
+const WAKE_SETTLE_MS = 2 * 60_000
+
 export class Holon extends EventEmitter {
   private nodes = new Map<string, Entry>()
   private escalations = new Map<string, Escalation & { resolve?: (answer: string) => void }>()
@@ -459,7 +449,7 @@ export class Holon extends EventEmitter {
     info.grade = p.grade ?? (isFree(info.cli, info.model) ? 0 : gradeOfTier(info.tier!))
     if (info.cli === 'shell') delete info.grade
     const launch = launchFor(info.cli, {
-      id, cwd: info.cwd, lead: info.lead, yolo: info.yolo, readOnly: info.readOnly, model: info.model,
+      id, cwd: info.cwd, lead: info.lead, yolo: info.yolo, readOnly: info.readOnly, model: info.model, effort: this.settings.claudeEffort,
       sessionId: info.sessionId, resume: !!restore?.sessionId, ...this.opts,
     })
     // Tests never start real agent CLIs (they cost quota); every terminal runs a plain shell.
@@ -971,7 +961,11 @@ export class Holon extends EventEmitter {
   goalNote(now = Date.now()) {
     const dir = this.directive
     if (!dir?.goals.length) return ''
-    const { total, none, noGoal } = this.goalMinutes(now)
+    const { total: seated, none: untied, noGoal } = this.goalMinutes(now)
+    // Holon starts the daily review itself: no one chose to put that capacity there.
+    const auto = noGoal['Needle Review'] ?? 0
+    delete noGoal['Needle Review']
+    const total = seated - auto, none = untied - auto
     if (total <= 0 || none / total <= 0.25) return ''
     const labels = Object.entries(noGoal).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([l, m]) => `${l} (${Math.round(m)})`).join(', ')
     return `\nIn the last 24h ${Math.round(none / total * 100)}% of seat-minutes (${Math.round(none)} of ${Math.round(total)}) went to work tied to no goal: ${labels}. Put capacity on the goals.`
@@ -1780,7 +1774,7 @@ export class Holon extends EventEmitter {
 
   // ── needle review: once a day, a read-only reviewer from another model family ──
 
-  private needle: { id: string; startedAt: number } | null = null
+  private needle: { id: string; startedAt: number; seenAt: number } | null = null
   private needleBase = Date.now()   // when this daemon started: the first review is due 15 minutes later
   needleTimeoutMs = 45 * 60_000
 
@@ -1807,6 +1801,9 @@ export class Holon extends EventEmitter {
   async needleReview(now = Date.now(), force = false): Promise<string | null> {
     const dir = this.directive
     if (this.needle) {
+      // Time the machine slept is not time the reviewer had to work.
+      if (now - this.needle.seenAt > WAKE_GAP_MS) this.needle.startedAt += now - this.needle.seenAt
+      this.needle.seenAt = now
       const e = this.nodes.get(this.needle.id)
       if (!e || e.term.exitCode !== null || now - this.needle.startedAt > this.needleTimeoutMs) {
         this.closeNeedle(e ? 'no report before it ended or timed out' : 'the reviewer was closed before it reported')
@@ -1837,7 +1834,7 @@ export class Holon extends EventEmitter {
     const cli = this.needleCli(director.cli, now)
     if (!cli) { this.log(null, dir.directorId, 'needle_review', { skipped: `no other model family available (Director is on ${director.cli})` }); return null }
     const reviewer = this.create({ label: 'Needle Review', cli, cwd: dir.workspace, parentId: dir.directorId, lead: true, readOnly: true, tier: cli === 'opencode' ? 'standard' : 'heavy' })
-    this.needle = { id: reviewer.id, startedAt: now }
+    this.needle = { id: reviewer.id, startedAt: now, seenAt: now }
     this.log(null, reviewer.id, 'needle_review', { started: true, cli, model: reviewer.model, director: director.cli })
     try {
       await this.clearStartup(reviewer.id)
@@ -2074,27 +2071,50 @@ export class Holon extends EventEmitter {
     if (hasMetrics) void this.measureGoals(Date.now(), true)
   }
 
+  private measureCalledAt = 0
+  private zeroRecheckMs = 30_000
+  darkWake: () => Promise<boolean> = async () => false   // the daemon sets the real check
+  private wokeAt = 0
+
   // Runs each goal's metric command in the workspace and stores the reading. A failure is
   // recorded on the goal, never thrown. Unforced, a metric is re-read at most every 30 minutes.
   async measureGoals(now = Date.now(), force = false) {
     const dir = this.directive
     const ms = dir?.goalMetrics
     if (!dir || !ms?.some(Boolean) || dir.status === 'dead') return
+    // The minute timer stops while the Mac sleeps and fires the moment it wakes, before the network is back:
+    // a site check prints 0 with no error, and the org reads an outage. So a gap starts a settling period.
+    const clock = Date.now()
+    if (this.measureCalledAt && clock - this.measureCalledAt > WAKE_GAP_MS) this.wokeAt = clock
+    this.measureCalledAt = clock
+    if (clock - this.wokeAt < WAKE_SETTLE_MS) return
+    // A dark wake lasts seconds and its network can drop before it ends, so even two reads can agree on a false 0.
+    if (await this.darkWake()) return
     const shell = process.env.SHELL || '/bin/zsh'
     await Promise.all(ms.map(async m => {
       if (!m || (!force && m.at && now - Date.parse(m.at) < 30 * 60_000)) return
       try {
-        const out = await new Promise<string>((resolve, reject) =>
-          execFile(shell, ['-lc', m.cmd], { cwd: dir.workspace, timeout: 60_000, maxBuffer: 1 << 20 }, (err, stdout) => err ? reject(err) : resolve(stdout)))
-        const nums = out.match(/-?\d+(?:\.\d+)?/g)
-        if (!nums) throw new Error(`printed no number: ${JSON.stringify(out.trim().slice(-80))}`)
-        const v = Number(nums.at(-1))
+        const read = async () => {
+          const out = await new Promise<string>((resolve, reject) =>
+            execFile(shell, ['-lc', m.cmd], { cwd: dir.workspace, timeout: 60_000, maxBuffer: 1 << 20 }, (err, stdout) => err ? reject(err) : resolve(stdout)))
+          const nums = out.match(/-?\d+(?:\.\d+)?/g)
+          if (!nums) throw new Error(`printed no number: ${JSON.stringify(out.trim().slice(-80))}`)
+          return Number(nums.at(-1))
+        }
+        let v = await read()
+        // A site check prints 0 for any failed request, so a fall to 0 has to survive a second look.
+        if (v === 0 && m.value) {
+          await new Promise(r => setTimeout(r, this.zeroRecheckMs))
+          v = await read()
+        }
+        if (Date.now() - clock > WAKE_GAP_MS || await this.darkWake()) return   // longer than the reads can take, so the machine slept through it: not a reading
         if (v !== m.value || !m.changedAt) {
           m.changedAt = new Date(now).toISOString()
           try { appendFileSync(join(this.opts.home, 'goal-history.jsonl'), JSON.stringify({ at: m.changedAt, name: m.name, value: v, ...(m.kind === 'output' ? { kind: 'output' } : {}) }) + '\n') } catch { /* history is best effort */ }
         }
         m.value = v; delete m.error
       } catch (err) {
+        if (Date.now() - clock > WAKE_GAP_MS) return   // failed because the machine slept: not a measurement failure
         m.error = (err as Error).message.slice(0, 200)
       }
       m.at = new Date(now).toISOString()
@@ -2110,8 +2130,11 @@ export class Holon extends EventEmitter {
       const m = ms[i]
       if (!m) return `G${i + 1} has no metric: give it one with set_goals (a name and a command that prints the number). Goal: ${g}`
       const d = m.value === undefined ? undefined : m.value - (m.beatValue ?? m.value)
-      const change = d === undefined ? 'not measured yet' : d === 0 ? 'no change' : `${d > 0 ? '+' : ''}${Math.round(d * 1000) / 1000} since last beat`
-      const flat = d === 0 && m.changedAt ? `; flat ${flatFor(now - Date.parse(m.changedAt))}` : ''
+      // Readings stop while the machine sleep-cycles: an unread number is not a flat one.
+      const unread = m.at ? now - Date.parse(m.at) : 0
+      const stale = d !== undefined && unread > 60 * 60_000
+      const change = stale ? `not read for ${flatFor(unread)}` : d === undefined ? 'not measured yet' : d === 0 ? 'no change' : `${d > 0 ? '+' : ''}${Math.round(d * 1000) / 1000} since last beat`
+      const flat = !stale && d === 0 && m.changedAt ? `; flat ${flatFor(now - Date.parse(m.changedAt))}` : ''
       return `G${i + 1} ${m.name} ${m.value ?? '?'} (${change}${flat})${m.error ? ` [last measurement failed: ${m.error}]` : ''}`
     })
     for (const m of ms) if (m && m.value !== undefined) m.beatValue = m.value

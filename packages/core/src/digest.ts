@@ -33,7 +33,8 @@ export interface DigestInput {
 export function digestPrompt(i: DigestInput, sinceMin: number) {
   return [
     `DIRECTIVE: ${i.directive.slice(0, 400)}`,
-    `GOALS:\n${i.goals.map(g => `- ${g}`).join('\n') || '- none yet'}`,
+    // Headlines only: goal text carries old evidence ("Seen 10-30: ...") the model would report as news.
+    `GOALS (background, not news):\n${i.goals.map(g => `- ${g.split(/(?<=\.)\s/)[0]!.slice(0, 120)}`).join('\n') || '- none yet'}`,
     `PEOPLE NOW:\n${i.roles.map(r => `- ${r.label}${r.dept ? ` (${r.dept})` : ''}${r.grade !== undefined ? ` G${r.grade}` : ''}, ${r.state}: ${r.status ?? ''}`).join('\n')}`,
     `WHAT HAPPENED IN THE LAST ${sinceMin} MIN:\n${i.actions.filter(a => !NOISE.has(a.action)).slice(-60).map(a => `${a.ts.slice(11, 16)} ${a.who} ${a.action} ${a.detail}`).join('\n') || 'nothing'}`,
     `WAITING ON THE OWNER: ${i.asksWaiting.length ? i.asksWaiting.join(' | ') : 'nothing'}`,
@@ -42,7 +43,7 @@ export function digestPrompt(i: DigestInput, sinceMin: number) {
 
 const ASK = 'You brief the owner of a company run by AI agents. From the notes on stdin, write 4-6 bullets in plain English, ' +
   'at most 20 words each, no jargon, ids or file paths: what got done, what each busy department is doing now, and anything ' +
-  'stuck. Name departments, not agents. If something is waiting on the owner, make the last bullet start with "Waiting on you:". ' +
+  'stuck. Report only what the people and the last minutes show; goals are background, never news. Name departments, not agents. If something is waiting on the owner, make the last bullet start with "Waiting on you:". ' +
   'Bullets only, each starting with "- ".'
 
 export async function summarize(input: string): Promise<string | null> {

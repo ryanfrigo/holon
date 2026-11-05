@@ -199,11 +199,26 @@ describe('daily needle review', () => {
     const t = Date.now() + DAY + 1000
     landAt(t - 1000)
     await h.needleReview(t)
-    await h.needleReview(t + 60_000)
+    for (let at = t + 60_000; at <= t + h.needleTimeoutMs; at += 60_000) await h.needleReview(at)
     expect(reviewers()).toHaveLength(1)
-    await h.needleReview(t + h.needleTimeoutMs + 1000)
+    await h.needleReview(t + h.needleTimeoutMs + 60_000)
     expect(reviewers()).toHaveLength(0)
     expect(needleActions().at(-1)!.args.failed).toBeTruthy()
+  })
+
+  it('time the machine sleeps does not count against the reviewer', async () => {
+    director()
+    const t = Date.now() + DAY + 1000
+    landAt(t - 1000)
+    await h.needleReview(t)
+    const slept = h.needleTimeoutMs + 60_000
+    await h.needleReview(t + slept)
+    expect(reviewers()).toHaveLength(1)
+    expect(needleActions().some(a => a.args.failed)).toBe(false)
+    for (let at = t + slept + 60_000; at <= t + slept + h.needleTimeoutMs; at += 60_000) await h.needleReview(at)
+    expect(reviewers()).toHaveLength(1)
+    await h.needleReview(t + slept + h.needleTimeoutMs + 60_000)
+    expect(reviewers()).toHaveLength(0)
   })
 
   it('a large day of commits stays out of the typed brief', async () => {

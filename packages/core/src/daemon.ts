@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { Holon } from './holon.ts'
 import { serve } from './server.ts'
@@ -27,6 +28,9 @@ const plans = () => {
 const holon = new Holon({ home: HOLON_HOME, socketPath: SOCKET_PATH, mcpEntry: MCP_ENTRY, plans })
 const server = await serve(holon, SOCKET_PATH)
 console.log(`holon daemon listening on ${SOCKET_PATH}`)
+// A Mac in a dark wake (lid shut or idle, up for seconds) reports no Graphics capability.
+if (process.platform === 'darwin') holon.darkWake = () => new Promise(resolve =>
+  execFile('pmset', ['-g', 'systemstate'], { timeout: 10_000 }, (err, out) => resolve(!err && /Capabilities are:/.test(out) && !/Capabilities are:.*Graphics/.test(out))))
 const restored = await holon.restore()
 if (restored) console.log(`restored ${restored} terminals`)
 // A paused org runs nothing: no nudges, no heals, no model calls for digests. Each job logs its own

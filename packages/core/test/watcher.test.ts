@@ -57,6 +57,9 @@ it('only idle screens with error-looking text are worth a model call', () => {
   expect(suspicious(seen('Error: ECONNREFUSED 127.0.0.1:5432', { quietMs: 11 * 60_000 }))).toBe(true)
   expect(suspicious(seen('Error: ECONNREFUSED', { quietMs: 60_000 }))).toBe(false)
   expect(suspicious(seen('all green', { quietMs: 20 * 60_000 }))).toBe(false)
+  // Claude Code's self-update footer never blocks the agent; a real error beside it still counts.
+  expect(suspicious(seen('done.\n❯ \n✘ Auto-update failed · Run claude doctor', { quietMs: 20 * 60_000 }))).toBe(false)
+  expect(suspicious(seen('Error: ECONNREFUSED\n✘ Auto-update failed · Run claude doctor', { quietMs: 20 * 60_000 }))).toBe(true)
 })
 
 it('promptOn reads the permission prompt off the bottom of the screen', () => {

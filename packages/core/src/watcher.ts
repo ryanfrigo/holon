@@ -54,6 +54,13 @@ function redactLines(text: string): string {
     .replace(/\bvercel_blob_rw_[A-Za-z0-9_-]{16,}/g, '[secret]')
     .replace(/\bvc[aipkr]_[A-Za-z0-9]{20,}/g, '[secret]')
     .replace(/(--token[=\s]\s*)[A-Za-z0-9_-]{20,}/g, '$1[secret]')
+    // Flags, quoted JSON keys, headers and two more prefixes. Name lengths are capped so none of these walks a long line.
+    .replace(/(--[a-z-]{0,30}(?:api-?key|secret|password)[=\s]\s*)[^\s"']{8,}/gi, '$1[secret]')
+    .replace(/(["'][A-Za-z0-9_-]{0,40}(?:token|secret|password|passwd|api_?key)["']\s*:\s*["'])[^"'\s]{8,}/gi, '$1[secret]')
+    .replace(/\b(x-api-key|x-auth-token)(\s*:\s*)[^\s"']+/gi, '$1$2[secret]')
+    .replace(/\b(authorization\s*:\s*basic\s+)[A-Za-z0-9+/=]{8,}/gi, '$1[secret]')
+    .replace(/\b((?:set-)?cookie\s*:\s*)[^\n"']+/gi, '$1[secret]')
+    .replace(/\b(?:lin_api_[A-Za-z0-9]{16,}|GOCSPX-[A-Za-z0-9_-]{16,})/g, '[secret]')
     // 4. Stripe webhook signing secret: whsec_ + 20+ chars
     .replace(/\bwhsec_[A-Za-z0-9_-]{20,}\b/g, '[secret]')
     // 5. PEM block: -----BEGIN ... PRIVATE KEY----- ... -----END ... PRIVATE KEY----- multi-line
@@ -80,8 +87,8 @@ function redactLines(text: string): string {
     // upper-case names - 4 s on 150 KB. The name is searched from its second letter, because
     // the first [A-Z] of the old pattern ate the first letter of the keyword.
     .replace(
-      /^([A-Z][A-Z0-9_]*)(\s*[=:]\s*).+$/gm,
-      (m: string, name: string, sep: string) => (/KEY|TOKEN|SECRET|PASSWORD|PASS/.test(name.slice(1)) ? `${name}${sep}[secret]` : m)
+      /^(export[ \t]+)?([A-Z][A-Z0-9_]*)(\s*[=:]\s*).+$/gm,
+      (m: string, exp: string | undefined, name: string, sep: string) => (/KEY|TOKEN|SECRET|PASSWORD|PASS/.test(name.slice(1)) ? `${exp ?? ''}${name}${sep}[secret]` : m)
     )
 }
 
@@ -256,11 +263,22 @@ export function diagnose(s: Seen): Finding | null {
   return null
 }
 
+// CLI chrome that reads like trouble but never blocks the agent: Claude Code's footer after its
+// background self-update fails. Left in, the classifier blamed it for idle Directors 8 times on 11-03.
+const chrome = (screen: string) => screen.split('\n').filter(l => !/Auto-update failed/.test(l)).join('\n')
+
 // Only screens that look wrong and have been still a while are worth a model call.
 export const suspicious = (s: Seen) =>
-  s.quietMs > 10 * 60_000 && /(error|failed|exception|panic|traceback|ECONN|ENOENT|EADDRINUSE|✗|stuck|timed? ?out)/i.test(s.screen)
+  s.quietMs > 10 * 60_000 && /(error|failed|exception|panic|traceback|ECONN|ENOENT|EADDRINUSE|✗|stuck|timed? ?out)/i.test(chrome(s.screen))
 
 export const FREE_WATCH_MODEL = 'nvidia/nemotron-3.5-lightning:free'
+
+// The model read a screen anyone can write to, so its prose is steerable and goes only to the log.
+// The lead gets the slug, which can't carry a sentence, and looks for itself.
+export function parseFinding(label: string, stdout: string): Finding | null {
+  const m = /ISSUE:\s*([\w-]+)\s*\|\s*(.+)/.exec(stdout)
+  return m ? { issue: `model:${m[1]}`, summary: m[2].trim(), notify: `${label} may be stuck (${m[1].slice(0, 40)}). Read its screen.` } : null
+}
 
 // Asks a free model what's wrong. It may only suggest a note for the lead, never keystrokes.
 export function classify(s: Seen, model = FREE_WATCH_MODEL): Promise<Finding | null> {
@@ -272,9 +290,8 @@ export function classify(s: Seen, model = FREE_WATCH_MODEL): Promise<Finding | n
   return new Promise(resolve => {
     const child = execFile('jev', [prompt], { env: { ...process.env, JEV_MODEL: model }, timeout: 60_000 }, (err, stdout) => {
       if (err) return resolve(null)
-      const m = /ISSUE:\s*([\w-]+)\s*\|\s*(.+)/.exec(stdout)
-      resolve(m ? { issue: `model:${m[1]}`, summary: m[2].trim(), notify: `${s.label}: ${m[2].trim()}` } : null)
+      resolve(parseFinding(s.label, stdout))
     })
-    child.stdin?.end(redact(s.screen).split('\n').slice(-40).join('\n'))
+    child.stdin?.end(redact(chrome(s.screen)).split('\n').slice(-40).join('\n'))
   })
 }

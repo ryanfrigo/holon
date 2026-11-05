@@ -39,6 +39,7 @@ export interface Settings {
   opencodeGo: boolean            // explicitly opt into an OpenCode Go subscription
   freePools: Record<FreePool, boolean>
   gradeModels: { claude: Record<Exclude<Grade, 0>, string>; codex: Record<Exclude<Grade, 0>, string> }
+  claudeEffort: string           // --effort for every Claude seat: low, medium, high, xhigh or max
   freeFirst: boolean             // builders run free (G0) unless their lead says why not
   directiveApproval: boolean     // the Director's directive rewrites wait for the owner's approve/reject
   quotaFallback: boolean         // drop a role one grade when its vendor is out of quota
@@ -112,6 +113,7 @@ export const DEFAULT_SETTINGS: Settings = {
   // Other pools need separate credentials.
   freePools: { opencode: true, omniroute: false, openrouter: false },
   gradeModels: { claude: { 1: 'haiku', 2: 'sonnet', 3: 'opus' }, codex: { 1: 'gpt-6-luna', 2: 'gpt-6-luna', 3: 'gpt-6-astra' } },
+  claudeEffort: 'medium',
   freeFirst: true,
   directiveApproval: true,
   quotaFallback: true,
@@ -143,6 +145,7 @@ export function mergeSettings(base: Settings, patch: Partial<Settings>): Setting
   if (patch.freePools) Object.assign(s.freePools, patch.freePools)
   if (patch.gradeModels?.claude) Object.assign(s.gradeModels.claude, patch.gradeModels.claude)
   if (patch.gradeModels?.codex) Object.assign(s.gradeModels.codex, patch.gradeModels.codex)
+  if (typeof patch.claudeEffort === 'string' && ['low', 'medium', 'high', 'xhigh', 'max'].includes(patch.claudeEffort)) s.claudeEffort = patch.claudeEffort
   if (typeof patch.quotaFallback === 'boolean') s.quotaFallback = patch.quotaFallback
   if (typeof patch.freeFirst === 'boolean') s.freeFirst = patch.freeFirst
   if (typeof patch.directiveApproval === 'boolean') s.directiveApproval = patch.directiveApproval

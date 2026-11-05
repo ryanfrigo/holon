@@ -66,6 +66,15 @@ describe('seat-minutes per goal', () => {
     expect(h.goalNote()).toMatch(/33% of seat-minutes \(10 of 30\) went to work tied to no goal: Audit \(10\)\. Put capacity on the goals\./)
   })
 
+  it('does not count the automatic Needle Review as capacity the org put on no goal', () => {
+    org()
+    const hour = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000).toISOString()
+    ;(h as any).directive.seatMin = { [hour]: { '-:Needle Review': 7 } }
+    expect(h.goalNote()).toBe('')
+    ;(h as any).directive.seatMin = { [hour]: { G1: 60, '-:Needle Review': 40, '-:Audit': 20 } }
+    expect(h.goalNote()).toBe('')   // 20 of 80 is 25%, without the review's 40
+  })
+
   it('stays quiet at or under 25%, outside 24h, and when there are no goals', () => {
     const d = org()
     const hour = (ago: number) => new Date(Math.floor((Date.now() - ago) / 3_600_000) * 3_600_000).toISOString()

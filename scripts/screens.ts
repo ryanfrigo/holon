@@ -6,7 +6,7 @@
 //   --no-claude (needs --fresh): a Codex-only stranger. PATH is a scratch dir holding node, npm, git and a fake
 //   `codex` script, so no claude is found and no real agent CLI can run.
 import { execFileSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { rootOf } from '../packages/core/src/projects.ts'
@@ -34,7 +34,18 @@ const out = args.find(a => !a.startsWith('--')) ??
 // Not through npx: it needs `sh`, which the --no-claude PATH leaves out.
 const electronBin = [join(DESK, 'node_modules/.bin/electron'), join(DESK, '../../node_modules/.bin/electron')].find(existsSync) ?? 'electron'
 if (!args.includes('--no-build')) execFileSync('npx', ['electron-vite', 'build'], { cwd: DESK, stdio: 'ignore' })
-execFileSync(electronBin, ['.', '--shots', out], { cwd: DESK, stdio: ['ignore', 'ignore', 'inherit'], timeout: 10 * 60_000, env })
+try {
+  execFileSync(electronBin, ['.', '--shots', out], { cwd: DESK, stdio: ['ignore', 'ignore', 'inherit'], timeout: 10 * 60_000, env })
+} finally {
+  // The app leaves its daemon running on purpose. A scratch home's daemon has no one to come back to:
+  // eight of them sat idle for 32+ hours after the 11-03 runs.
+  if (fresh) {
+    // An empty pid file reads as 0, and kill(0) would signal this script's own process group.
+    try { const pid = Number(readFileSync(join(scratch, '.holon', 'daemon.pid'), 'utf8')); if (pid) process.kill(pid, 'SIGTERM') } catch { /* it never started, or already exited */ }
+    // The daemon is still writing as it exits, so retry; a failed cleanup must not fail the run.
+    try { rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }) } catch (e) { console.error(`left ${scratch}: ${e}`) }
+  }
+}
 const files = readdirSync(out).filter(f => f.endsWith('.png')).sort()
 console.log(`${files.length} screenshots in ${out}`)
 for (const f of files) console.log(`  ${join(out, f)}`)

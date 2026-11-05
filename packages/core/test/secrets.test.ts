@@ -103,3 +103,18 @@ describe('Secrets redacted at every persisted sink', () => {
     expect(dirJson).toContain('[secret]')
   })
 })
+it.each([
+  ['export X_TOKEN=abc', 'export X_TOKEN=[secret]'],
+  ['curl --api-key=abcd1234efgh', 'curl --api-key=[secret]'],   // gitleaks:allow secret-scan:allow
+  ['{"access_token": "abcd1234efgh"}', '{"access_token": "[secret]"}'],   // gitleaks:allow secret-scan:allow
+  ['{"apiKey":"abcd1234efgh"}', '{"apiKey":"[secret]"}'],   // gitleaks:allow secret-scan:allow
+  ['-H "x-api-key: abc123"', '-H "x-api-key: [secret]"'],
+  ['Authorization: Basic dXNlcjpwYXNz', 'Authorization: Basic [secret]'],
+  ['Cookie: session=abc; other=def', 'Cookie: [secret]'],
+  ['key lin_api_abcdefghijklmnop1234', 'key [secret]'],
+  ['id GOCSPX-abcdefghijklmnop1234', 'id [secret]'],
+])('redacts %s', (line, want) => { expect(redact(line)).toBe(want) })
+
+it('leaves ordinary text about these things alone', () => {
+  for (const line of ['the cookie banner is fixed', 'export FOO=bar', '{"title": "a token of thanks"}', 'run --help for flags']) expect(redact(line)).toBe(line)
+})

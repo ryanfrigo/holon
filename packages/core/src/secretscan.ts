@@ -37,7 +37,11 @@ const RULES: { name: string; re: RegExp }[] = [
   { name: 'provider-key', re: /\b(sk|rk|pk)[-_](live|test|proj|ant|or)?[-_]?[A-Za-z0-9_-]{12,}/ },
   { name: 'aws-access-key', re: /\b(AKIA|AIza)[A-Za-z0-9_-]{10,}/ },
   { name: 'jwt', re: /\b(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/ },
-  { name: 'env-secret', re: /^([A-Z][A-Z0-9_]*(KEY|TOKEN|SECRET|PASSWORD|PASS)[A-Z0-9_]*\s*[=:]\s*).+$/m },
+  { name: 'flag-secret', re: /--[a-z-]{0,30}(?:api-?key|secret|password)[=\s]\s*[^\s"']{8,}/i },
+  { name: 'json-secret', re: /["'][A-Za-z0-9_-]{0,40}(?:token|secret|password|passwd|api_?key)["']\s*:\s*["'][^"'\s]{8,}/i },
+  { name: 'header-secret', re: /\b(?:x-api-key|x-auth-token|authorization\s*:\s*basic|(?:set-)?cookie)\s*:?\s*\S/i },
+  { name: 'provider-key', re: /\b(?:lin_api_[A-Za-z0-9]{16,}|GOCSPX-[A-Za-z0-9_-]{16,})/ },
+  { name: 'env-secret', re: /^(?:export[ \t]+)?([A-Z][A-Z0-9_]*(KEY|TOKEN|SECRET|PASSWORD|PASS)[A-Z0-9_]*\s*[=:]\s*).+$/m },
 ]
 
 // Why a line was flagged: the first pattern that matches it, or a plain shape when none does.

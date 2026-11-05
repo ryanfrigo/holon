@@ -16,6 +16,7 @@ const metric = (name: string, cmd: string) => ({ name, cmd })
 beforeEach(async () => {
   home = mkdtempSync(join(tmpdir(), 'holon-'))
   h = new Holon({ home, socketPath: join(home, 'holon.sock'), mcpEntry: '/dev/null' })
+  ;(h as any).zeroRecheckMs = 10
   const dir = h.create({ label: 'Director', cli: 'shell', cwd: home })
   dirId = dir.id
   ;(h as any).directive = { text: 't', workspace: home, directorId: dir.id, goals: [], deliverables: [], status: 'running', startedAt: '', heartbeatMin: 10 }
@@ -58,6 +59,95 @@ describe('measure', () => {
     a!.cmd = 'exit 1'
     await h.measureGoals(Date.now() + 31 * min)
     expect(a!.value).toBe(5); expect(a!.error).toBeTruthy()
+  })
+  // 2026-11-04 23:11Z: the minute timer fired as the Mac woke, before the network was back, and World's
+  // site checks printed 0. Its Director read an outage and G4 counted three moves.
+  it('re-reads a fall to 0 before believing it: a one-off failure is not a move', async () => {
+    // prints 0 once, right after the marker appears: one failed check
+    const cmd = `if [ -f once ]; then rm once; echo 0; else echo 1; fi`
+    h.setGoals(null, [{ text: 'g', metric: metric('up', cmd) }])
+    await h.measureGoals(Date.now(), true)
+    writeFileSync(join(home, 'once'), '')
+    await h.measureGoals(Date.now(), true)
+    expect(h.getDirective()!.goalMetrics![0]!.value).toBe(1)
+    const rows = readFileSync(join(home, 'goal-history.jsonl'), 'utf8').trim().split('\n')
+    expect(rows).toHaveLength(1)
+  })
+  it('takes no reading in a dark wake, even a fall that two reads agree on', async () => {
+    h.setGoals(null, [{ text: 'g', metric: metric('site', 'echo 1') }])
+    await h.measureGoals(Date.now(), true)
+    const m = h.getDirective()!.goalMetrics![0]!
+    expect(m.value).toBe(1)
+    const at = m.at
+    m.cmd = 'echo 0'
+    ;(h as any).darkWake = async () => true
+    await h.measureGoals(Date.now() + 1000, true)
+    expect(m.value).toBe(1)
+    expect(m.at).toBe(at)
+    ;(h as any).darkWake = async () => false
+    await h.measureGoals(Date.now() + 2000, true)
+    expect(m.value).toBe(0)
+  })
+  it('records a fall to 0 when the re-read agrees', async () => {
+    writeFileSync(join(home, 'v'), '1')
+    h.setGoals(null, [{ text: 'g', metric: metric('up', 'cat v') }])
+    await h.measureGoals(Date.now(), true)
+    writeFileSync(join(home, 'v'), '0')
+    await h.measureGoals(Date.now(), true)
+    expect(h.getDirective()!.goalMetrics![0]!.value).toBe(0)
+    const rows = readFileSync(join(home, 'goal-history.jsonl'), 'utf8').trim().split('\n')
+    expect(rows.map(r => JSON.parse(r).value)).toEqual([1, 0])
+  })
+  it('takes no reading just after the machine wakes, then reads normally', async () => {
+    h.setGoals(null, [{ text: 'a', metric: metric('up', 'echo 1') }])
+    await h.measureGoals(Date.now(), true)
+    const m = h.getDirective()!.goalMetrics![0]!
+    expect(m.value).toBe(1)
+    const history = () => readFileSync(join(home, 'goal-history.jsonl'), 'utf8').trim().split('\n').length
+    const rows = history()
+    m.cmd = 'echo 0'
+    const t = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(t + 6 * min)   // the timer's first tick after a 6 minute sleep
+    try {
+      await h.measureGoals(t + 6 * min, true)
+      expect(m.value).toBe(1)
+      expect(history()).toBe(rows)
+      clock.mockReturnValue(t + 7 * min)
+      await h.measureGoals(t + 7 * min, true)   // still settling
+      expect(m.value).toBe(1)
+      clock.mockReturnValue(t + 9 * min)
+      await h.measureGoals(t + 9 * min, true)
+      expect(m.value).toBe(0)
+      expect(history()).toBe(rows + 1)
+    } finally { clock.mockRestore() }
+  })
+  it('drops a reading the machine slept through', async () => {
+    h.setGoals(null, [{ text: 'a', metric: metric('up', 'echo 1') }])
+    await h.measureGoals(Date.now(), true)
+    const m = h.getDirective()!.goalMetrics![0]!
+    m.cmd = 'echo 0'
+    const t = Date.now()
+    let calls = 0
+    // The first read of the clock is before the command; every later one is after a 10 minute sleep.
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => calls++ === 0 ? t + 30_000 : t + 10 * min)
+    try {
+      await h.measureGoals(t + 30_000, true)
+      expect(m.value).toBe(1)
+    } finally { clock.mockRestore() }
+  })
+  it('drops a failure the machine slept through', async () => {
+    h.setGoals(null, [{ text: 'a', metric: metric('up', 'echo 1') }])
+    await h.measureGoals(Date.now(), true)
+    const m = h.getDirective()!.goalMetrics![0]!
+    m.cmd = 'exit 7'
+    const t = Date.now()
+    let calls = 0
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => calls++ === 0 ? t + 30_000 : t + 10 * min)
+    try {
+      await h.measureGoals(t + 30_000, true)
+      expect(m.error).toBeUndefined()
+      expect(m.value).toBe(1)
+    } finally { clock.mockRestore() }
   })
   it('re-reads at most every 30 minutes unless forced', async () => {
     h.setGoals(null, [{ text: 'a', metric: metric('n', `echo $RANDOM$RANDOM`) }])
@@ -134,12 +224,19 @@ describe('goal history and output-without-outcome flag', () => {
     expect(h.getDirective()!.goalMetrics![0]!.changedAt).toBe(new Date(t).toISOString())
     expect(hist()).toHaveLength(1)
   })
+  it('says a number has not been read, instead of calling it flat', async () => {
+    h.setGoals(null, [{ text: 'g', metric: metric('replies', 'echo 0') }])
+    const t = await first()
+    expect(lines(t + 30 * min)).toContain('replies 0 (no change')
+    expect(lines(t + day)).toMatch(/replies 0 \(not read for \d+[hd]\)/)
+  })
   it('flags only when every metric is flat 48h+ and 20+ commits landed', async () => {
     h.setGoals(null, [{ text: 'a', metric: metric('replies', 'echo 0') }, { text: 'b', metric: metric('paid', 'echo 0') }])
     const t = await first()
     const flag = 'Output without outcome: 20 commits landed in 24h'
     landed(20)
     expect(lines(t + 47 * 60 * min)).not.toContain('Output without outcome')   // flat 47h
+    await h.measureGoals(t + 3 * day, true)
     expect(lines(t + 3 * day)).toContain('replies 0 (no change; flat 3d)')
     expect(lines(t + 3 * day)).toContain(flag)
     landed(19)
@@ -217,6 +314,22 @@ describe('goal history and output-without-outcome flag', () => {
     expect(run()).toBe('3')   // visits 0->1 once, tests twice
     writeFileSync(join(fake, '.holon', 'directive.json'), JSON.stringify({ goalMetrics: [{ name: 'visits', cmd: 'x' }, { name: 'tests', cmd: 'y', kind: 'output' }] }))
     expect(run()).toBe('1')
+  })
+  it('goals-moved: a fall to 0 that returns to its old value moved nothing', () => {
+    const fake = mkdtempSync(join(tmpdir(), 'gm-'))
+    mkdirSync(join(fake, '.holon'), { recursive: true })
+    const now = new Date().toISOString()
+    const rows = (name: string, vs: number[]) => vs.map(v => JSON.stringify({ at: now, name, value: v }))
+    const run = (...r: string[][]) => {
+      writeFileSync(join(fake, '.holon', 'goal-history.jsonl'), r.flat().join('\n') + '\n')
+      return execFileSync(process.execPath, [join(__dirname, '../../../scripts/goals-moved.ts')], { env: { ...process.env, HOME: fake }, encoding: 'utf8' }).trim()
+    }
+    expect(run(rows('site', [1, 0, 1]))).toBe('0')
+    expect(run(rows('site', [1, 0, 1, 0, 1]))).toBe('0')
+    expect(run(rows('site', [1, 0]))).toBe('1')          // still down: it counts until it returns
+    expect(run(rows('sales', [5, 0, 3]))).toBe('2')      // came back somewhere else: both moved
+    expect(run(rows('site', [0, 1]))).toBe('1')          // a first rise is a move
+    expect(run(rows('a', [1, 0]), rows('b', [2, 3]), rows('a', [1]))).toBe('1')
   })
   it('a kind-only set_goals is saved at once', () => {
     h.setGoals(null, [{ text: 'a', metric: metric('tests', 'echo 1') }])

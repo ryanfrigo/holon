@@ -7,3 +7,4 @@ docs/specs export-ignore
 docs/analysis export-ignore
 docs/evidence export-ignore
 docs/launch export-ignore
+HOLON-LOG.md merge=union
